@@ -6,12 +6,14 @@ public class MenuManager : MonoBehaviour
     public GameObject modePanel;
     public GameObject authPanel; // painel de autenticação
     public GameObject googleButton; // botão do Google
+    public GameObject profilePanel; // painel de perfil (garantir inicia inativo)
 
     private void Start()
     {
         mainPanel.SetActive(true);
         modePanel.SetActive(false);
         authPanel.SetActive(false); // inicia desativado
+        if (profilePanel != null) profilePanel.SetActive(false); // garante que comece desativado
         if (googleButton != null) googleButton.SetActive(true); // Google Button visível inicialmente
     }
 
