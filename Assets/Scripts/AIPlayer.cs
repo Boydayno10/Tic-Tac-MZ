@@ -20,47 +20,162 @@ public class AIPlayer : MonoBehaviour
     }
     private void MakeMove()
     {
-        // 1. Tenta vencer imediatamente
-        Cell win = FindTwoInLine(aiType); // 2 minhas + 1 vazio = vitória
-        if (win != null)
-        {
-            ExecuteMove(win);
-            isMakingMove = false;
-            return;
-        }
-        // 2. Bloqueia vitória imediata do adversário
-        PieceType opponent = aiType == PieceType.X ? PieceType.O : PieceType.X;
-        Cell block = FindTwoInLine(opponent);
-        if (block != null)
-        {
-            ExecuteMove(block);
-            isMakingMove = false;
-            return;
-        }
-        // 3. Cria duas ameaças ao mesmo tempo (força o jogador a perder no próximo turno)
-        Cell fork = FindForkOpportunity();
-        if (fork != null)
-        {
-            ExecuteMove(fork);
-            isMakingMove = false;
-            return;
-        }
-        // 4. Bloqueia fork do adversário
-        Cell blockFork = FindOpponentFork();
-        if (blockFork != null)
-        {
-            ExecuteMove(blockFork);
-            isMakingMove = false;
-            return;
-        }
-        // 5. Estratégia posicional perfeita (centro > cantos > lados)
-        Cell strategic = GetBestStrategicCell();
-        if (strategic != null)
-        {
-            ExecuteMove(strategic);
-        }
-        isMakingMove = false;
+		// Use minimax to pick the best move for both placement and movement phases
+		var best = GetBestMove();
+
+		if (best.from == -1)
+		{
+			// placement
+			Cell target = cells[best.to];
+			if (target != null)
+				ExecuteMove(target);
+		}
+		else
+		{
+			// movement: move piece at "from" to "to"
+			Cell fromCell = cells[best.from];
+			Cell toCell = cells[best.to];
+			if (fromCell != null && fromCell.IsOccupied() && toCell != null && !toCell.IsOccupied())
+			{
+				SelectablePiece piece = fromCell.GetCurrentPiece();
+				if (piece != null)
+					MovePieceTo(piece, toCell);
+			}
+		}
+
+		isMakingMove = false;
     }
+
+	// Represents a candidate move: placement (from == -1) or movement (from -> to)
+	private struct MoveChoice { public int from; public int to; public MoveChoice(int f, int t) { from = f; to = t; } }
+
+	private MoveChoice GetBestMove()
+	{
+		PieceType[] board = new PieceType[cells.Length];
+		for (int i = 0; i < cells.Length; i++)
+			board[i] = cells[i].IsOccupied() ? cells[i].GetCurrentPiece().type : PieceType.None;
+
+		bool isPlacement = CountPiecesOnBoard(aiType) < 3;
+
+		int depthLimit = 8; // safe cap
+		var result = Minimax(board, depthLimit, int.MinValue, int.MaxValue, true, isPlacement);
+		return result.bestMove;
+	}
+
+	private (int score, MoveChoice bestMove) Minimax(PieceType[] board, int depth, int alpha, int beta, bool maximizingPlayer, bool placementPhase)
+	{
+		PieceType winner = CheckWinner(board);
+		if (winner == aiType) return (10 + depth, new MoveChoice(-1, -1));
+		PieceType opponent = (aiType == PieceType.X) ? PieceType.O : PieceType.X;
+		if (winner == opponent) return (-10 - depth, new MoveChoice(-1, -1));
+
+		bool hasEmpty = false;
+		for (int i = 0; i < board.Length; i++) if (board[i] == PieceType.None) { hasEmpty = true; break; }
+		if (!hasEmpty) return (0, new MoveChoice(-1, -1));
+
+		if (depth == 0) return (0, new MoveChoice(-1, -1));
+
+		if (maximizingPlayer)
+		{
+			int maxEval = int.MinValue;
+			MoveChoice best = new MoveChoice(-1, -1);
+
+			if (placementPhase)
+			{
+				for (int j = 0; j < board.Length; j++)
+				{
+					if (board[j] != PieceType.None) continue;
+					board[j] = aiType;
+					var eval = Minimax(board, depth - 1, alpha, beta, false, false);
+					board[j] = PieceType.None;
+					if (eval.score > maxEval) { maxEval = eval.score; best = new MoveChoice(-1, j); }
+					alpha = Mathf.Max(alpha, maxEval);
+					if (beta <= alpha) break;
+				}
+			}
+			else
+			{
+				// movement: move each own piece to any empty cell
+				for (int i = 0; i < board.Length; i++)
+				{
+					if (board[i] != aiType) continue;
+					for (int j = 0; j < board.Length; j++)
+					{
+						if (board[j] != PieceType.None) continue;
+						board[i] = PieceType.None;
+						board[j] = aiType;
+						var eval = Minimax(board, depth - 1, alpha, beta, false, false);
+						board[i] = aiType;
+						board[j] = PieceType.None;
+						if (eval.score > maxEval) { maxEval = eval.score; best = new MoveChoice(i, j); }
+						alpha = Mathf.Max(alpha, maxEval);
+						if (beta <= alpha) break;
+					}
+				}
+			}
+
+			return (maxEval, best);
+		}
+		else
+		{
+			int minEval = int.MaxValue;
+			MoveChoice best = new MoveChoice(-1, -1);
+
+			// opponent moves
+			bool oppPlacement = CountPiecesOnBoard(opponent) < 3;
+
+			if (oppPlacement)
+			{
+				for (int j = 0; j < board.Length; j++)
+				{
+					if (board[j] != PieceType.None) continue;
+					board[j] = opponent;
+					var eval = Minimax(board, depth - 1, alpha, beta, true, false);
+					board[j] = PieceType.None;
+					if (eval.score < minEval) { minEval = eval.score; best = new MoveChoice(-1, j); }
+					beta = Mathf.Min(beta, minEval);
+					if (beta <= alpha) break;
+				}
+			}
+			else
+			{
+				for (int i = 0; i < board.Length; i++)
+				{
+					if (board[i] != opponent) continue;
+					for (int j = 0; j < board.Length; j++)
+					{
+						if (board[j] != PieceType.None) continue;
+						board[i] = PieceType.None;
+						board[j] = opponent;
+						var eval = Minimax(board, depth - 1, alpha, beta, true, false);
+						board[i] = opponent;
+						board[j] = PieceType.None;
+						if (eval.score < minEval) { minEval = eval.score; best = new MoveChoice(i, j); }
+						beta = Mathf.Min(beta, minEval);
+						if (beta <= alpha) break;
+					}
+				}
+			}
+
+			return (minEval, best);
+		}
+	}
+
+	private PieceType CheckWinner(PieceType[] board)
+	{
+		int[][] wins = new int[][] {
+			new[]{0,1,2}, new[]{3,4,5}, new[]{6,7,8},
+			new[]{0,3,6}, new[]{1,4,7}, new[]{2,5,8},
+			new[]{0,4,8}, new[]{2,4,6}
+		};
+		foreach (var combo in wins)
+		{
+			PieceType first = board[combo[0]];
+			if (first == PieceType.None) continue;
+			if (board[combo[1]] == first && board[combo[2]] == first) return first;
+		}
+		return PieceType.None;
+	}
     private void ExecuteMove(Cell target)
     {
         int myCount = CountPiecesOnBoard(aiType);
