@@ -82,53 +82,60 @@ public class GameManager : MonoBehaviour
 
         foreach (SelectablePiece piece in FindObjectsOfType<SelectablePiece>())
         {
+            CanvasGroup cg = piece.GetComponent<CanvasGroup>();
+            if (cg == null) cg = piece.gameObject.AddComponent<CanvasGroup>();
+
             bool enable = false;
 
-            if (GameMode.mode == "online" && GameManagerOnline.Instance != null)
+            // --- Pieces that are ON the board (inside a Cell)
+            if (piece.currentCell != null)
             {
-                bool isMyPiece = piece.type == GameManagerOnline.Instance.myPiece;
-                bool myTurn = GameManagerOnline.Instance.IsMyTurn();
+                // Always fully visible on the board
+                cg.alpha = 1f;
 
-                enable = !gameOver && isMyPiece && myTurn &&
-                         (isPlacementPhase ? piece.currentCell == null : piece.currentCell != null);
+                if (GameMode.mode == "online" && GameManagerOnline.Instance != null)
+                {
+                    bool isMyPiece = piece.type == GameManagerOnline.Instance.myPiece;
+                    bool myTurn = GameManagerOnline.Instance.IsMyTurn();
+
+                    // On-board pieces are only interactive in movement phase and only for the owner on their turn
+                    enable = !gameOver && isMyPiece && myTurn && !isPlacementPhase;
+                }
+                else
+                {
+                    bool myTurnLocal = piece.type == currentTurn;
+                    enable = !gameOver && myTurnLocal && !isPlacementPhase;
+                }
             }
+            // --- Pieces that are OFF the board (TopPieces / BottomPieces)
             else
             {
-                bool myTurn = piece.type == currentTurn;
-                enable = !gameOver && myTurn &&
-                         (isPlacementPhase ? piece.currentCell == null : piece.currentCell != null);
+                if (GameMode.mode == "online" && GameManagerOnline.Instance != null)
+                {
+                    bool isMyPiece = piece.type == GameManagerOnline.Instance.myPiece;
+                    bool myTurn = GameManagerOnline.Instance.IsMyTurn();
+
+                    // Owner's off-board pieces are full when it's their turn, faded otherwise
+                    if (isMyPiece) cg.alpha = myTurn ? 1f : 0.4f;
+                    else cg.alpha = myTurn ? 0.4f : 1f;
+
+                    // Off-board pieces are interactive only during placement phase and only for the owner on their turn
+                    enable = !gameOver && isMyPiece && myTurn && isPlacementPhase;
+                }
+                else
+                {
+                    // Singleplayer / local: compare to GameManager.currentTurn
+                    cg.alpha = (piece.type == currentTurn) ? 1f : 0.4f;
+                    bool myTurnLocal = piece.type == currentTurn;
+                    enable = !gameOver && myTurnLocal && isPlacementPhase;
+                }
             }
 
             piece.enabled = enable;
-
-            CanvasGroup cg = piece.GetComponent<CanvasGroup>();
-            if (cg == null) cg = piece.gameObject.AddComponent<CanvasGroup>();
-
             cg.blocksRaycasts = enable;
             cg.interactable = enable;
-            cg.alpha = enable ? 1f : 0.3f;
 
             if (!piece.enabled) piece.Deselect();
-        }
-
-        // Invisibilizar IA no singleplayer
-        foreach (SelectablePiece piece in FindObjectsOfType<SelectablePiece>())
-        {
-            CanvasGroup cg = piece.GetComponent<CanvasGroup>();
-            if (cg == null) cg = piece.gameObject.AddComponent<CanvasGroup>();
-
-            if (GameMode.mode == "single")
-            {
-                PieceType playerType = currentTurn;
-                PieceType aiType = (playerType == PieceType.X) ? PieceType.O : PieceType.X;
-
-                if (piece.type == aiType && piece.currentCell == null)
-                {
-                    cg.alpha = 0f;
-                    cg.blocksRaycasts = false;
-                    cg.interactable = false;
-                }
-            }
         }
     }
 
@@ -150,23 +157,16 @@ public class GameManager : MonoBehaviour
             if (IsWinningCombo(combo, lastPiece.type))
             {
                 gameOver = true;
-                StopAllBlinkingAndFixAlpha(combo);
+                // Stop any previous blinking and ensure borders are at full alpha
+                StopAllBlinkingAndFixAlpha(null);
 
                 Debug.Log("Vitória → " + lastPiece.type);
 
-                // 🔥 RPC OU LOCAL (SEU CÓDIGO)
-                if (GameMode.mode == "online" && GameManagerOnline.Instance != null)
-                {
-                    GameManagerOnline.Instance.photonView.RPC(
-                        "RPC_ShowWinner",
-                        Photon.Pun.RpcTarget.All,
-                        (int)lastPiece.type
-                    );
-                }
-                else
-                {
-                    WinMenuUI.Instance.ShowWinner(lastPiece.type);
-                }
+                // Start blinking the winning combo 3 times, then show the WinMenu (or RPC it)
+                if (blinkCoroutine != null)
+                    StopCoroutine(blinkCoroutine);
+
+                blinkCoroutine = StartCoroutine(BlinkWinningCombo(combo, lastPiece.type));
 
                 UpdateSelectablePieces();
                 return;
@@ -223,6 +223,95 @@ public class GameManager : MonoBehaviour
             if (p.border != null)
                 p.border.color = new Color(p.border.color.r, p.border.color.g, p.border.color.b, 1f);
         }
+    }
+
+    private System.Collections.IEnumerator BlinkWinningCombo(int[] combo, PieceType winner)
+    {
+        SelectablePiece[] winPieces = new SelectablePiece[3];
+        for (int i = 0; i < 3; i++)
+        {
+            int idx = combo[i];
+            if (idx >= 0 && idx < cells.Length && cells[idx].IsOccupied())
+                winPieces[i] = cells[idx].GetCurrentPiece();
+            else
+                winPieces[i] = null;
+        }
+
+        float fullCycle = Mathf.Max(0.01f, 1f / Mathf.Max(0.0001f, blinkSpeed));
+        float half = fullCycle * 0.5f;
+
+        int flashes = 3;
+        for (int f = 0; f < flashes; f++)
+        {
+            // Fade out
+            float t = 0f;
+            while (t < half)
+            {
+                float a = Mathf.Lerp(1f, 0f, t / half);
+                foreach (var p in winPieces)
+                {
+                    if (p != null && p.border != null)
+                    {
+                        var c = p.border.color;
+                        p.border.color = new Color(c.r, c.g, c.b, a);
+                    }
+                }
+                t += Time.deltaTime;
+                yield return null;
+            }
+            // ensure fully invisible
+            foreach (var p in winPieces)
+            {
+                if (p != null && p.border != null)
+                {
+                    var c = p.border.color;
+                    p.border.color = new Color(c.r, c.g, c.b, 0f);
+                }
+            }
+
+            // Fade in
+            t = 0f;
+            while (t < half)
+            {
+                float a = Mathf.Lerp(0f, 1f, t / half);
+                foreach (var p in winPieces)
+                {
+                    if (p != null && p.border != null)
+                    {
+                        var c = p.border.color;
+                        p.border.color = new Color(c.r, c.g, c.b, a);
+                    }
+                }
+                t += Time.deltaTime;
+                yield return null;
+            }
+            // ensure fully visible
+            foreach (var p in winPieces)
+            {
+                if (p != null && p.border != null)
+                {
+                    var c = p.border.color;
+                    p.border.color = new Color(c.r, c.g, c.b, 1f);
+                }
+            }
+        }
+
+        // After blinking, show the result (online: RPC; local: direct)
+        if (GameMode.mode == "online" && GameManagerOnline.Instance != null)
+        {
+            GameManagerOnline.Instance.photonView.RPC(
+                "RPC_ShowWinner",
+                Photon.Pun.RpcTarget.All,
+                (int)winner
+            );
+        }
+        else
+        {
+            WinMenuUI.Instance.ShowWinner(winner);
+        }
+
+        blinkCoroutine = null;
+        yield break;
     }
 
     public void ApplyMove(int pieceId, int cellIndex, bool isPlacement, PieceType type, bool isRemote = false)
