@@ -13,7 +13,6 @@ public class MenuManager : MonoBehaviour
         mainPanel.SetActive(true);
         modePanel.SetActive(false);
         authPanel.SetActive(false); // inicia desativado
-<<<<<<< HEAD
         if (profilePanel != null)
         {
             // Garantir que o panel exista ativo na hierarquia, mas invisível (alpha=0)
@@ -24,9 +23,6 @@ public class MenuManager : MonoBehaviour
             cg.interactable = false;
             cg.blocksRaycasts = false;
         }
-=======
-        if (profilePanel != null) profilePanel.SetActive(false); // garante que comece desativado
->>>>>>> e95b7e0ad1390c4412811e7c40eb2e68b109ae7d
         if (googleButton != null) googleButton.SetActive(true); // Google Button visível inicialmente
     }
 
