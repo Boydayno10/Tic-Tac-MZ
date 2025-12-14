@@ -15,6 +15,7 @@ public class ProfilePanelController : MonoBehaviour
 
     void Start()
     {
+<<<<<<< HEAD
         // Começa ativo na hierarquia, mas invisível via CanvasGroup (alpha=0)
         // Isso permite que seja mostrado novamente ao fazer login quando não existir usuário
         var cg = GetComponent<CanvasGroup>();
@@ -22,6 +23,10 @@ public class ProfilePanelController : MonoBehaviour
         cg.alpha = 0f;
         cg.interactable = false;
         cg.blocksRaycasts = false;
+=======
+        // Começa desativado para que seja mostrado apenas quando necessário
+        gameObject.SetActive(false);
+>>>>>>> e95b7e0ad1390c4412811e7c40eb2e68b109ae7d
 
         createButton.interactable = false;
 
@@ -90,6 +95,7 @@ public class ProfilePanelController : MonoBehaviour
     // Cancela e volta para o painel de autenticação
     public void Cancel()
     {
+<<<<<<< HEAD
         // Volta a deixar o panel invisível via CanvasGroup antes de desativar
         var cg = GetComponent<CanvasGroup>();
         if (cg != null)
@@ -100,6 +106,9 @@ public class ProfilePanelController : MonoBehaviour
         }
         // Mantém o GameObject ativo (mas invisível) para que possa ser mostrado
         // novamente apenas alterando o CanvasGroup alpha quando necessário.
+=======
+        gameObject.SetActive(false);
+>>>>>>> e95b7e0ad1390c4412811e7c40eb2e68b109ae7d
         if (menuManager != null)
             menuManager.OpenAuthPanel();
     }
@@ -130,6 +139,7 @@ public class ProfilePanelController : MonoBehaviour
             selectedAvatar
         );
 
+<<<<<<< HEAD
         // Fecha ProfilePanel: deixa alpha = 0 e depois desativa
         var cg = GetComponent<CanvasGroup>();
         if (cg != null)
@@ -139,6 +149,10 @@ public class ProfilePanelController : MonoBehaviour
             cg.blocksRaycasts = false;
         }
         // Mantém o GameObject ativo (mas invisível) para consistência com o estado inicial
+=======
+        // Fecha ProfilePanel e abre menu
+        gameObject.SetActive(false);
+>>>>>>> e95b7e0ad1390c4412811e7c40eb2e68b109ae7d
         if (menuManager != null)
         {
             menuManager.BackToMainMenu();
